@@ -1,0 +1,90 @@
+# JRC Compras — primeira versão funcional
+
+Aplicação local com banco SQLite persistente e interface em português. Planejamento desde o início da obra, orçamento por centro de custo e etapa, aprovação, requisições, propostas, pedido e recebimentos parciais. Sem dados fictícios e sem senha padrão. Os arquivos sincronizados do projeto não são alterados.
+
+## Executar no computador
+
+Requer Node.js 24 ou superior. Na primeira instalação, execute `npm install` (ou `pnpm install --frozen-lockfile` para usar as versões travadas). Depois execute `npm start` e abra http://127.0.0.1:3000. Cadastre o primeiro administrador com senha de pelo menos 12 caracteres. O banco fica em `data/compras.sqlite`. Mantenha a aplicação aberta para acessá-la. Rode `npm test` para validar o fluxo de compras.
+
+## Primeiro uso
+
+1. Configurações > Obras: cadastrar identificação da obra, razão social, nome fantasia, CNPJ, início, endereços da obra e de entrega, engenheiros responsável/hidráulico/elétrico, arquiteto, contador, mestre de obras, responsável pelo almoxarifado e dias/horários de recebimento. Contatos e registros profissionais desses responsáveis são opcionais. A opção Usar o endereço da obra para as entregas copia o endereço no momento de salvar. Obras antigas permanecem disponíveis e podem ser completadas pelo botão Completar cadastro. A edição mantém os vínculos com orçamento e compras, o avanço físico e a referência CUB.
+2. Cadastrar itens com quantidade, unidade, centro de custo, etapa, percentual previsto, data de uso, antecedência e preço de referência.
+3. Auditor aprova cada linha de orçamento. O percentual é uma referência de planejamento; os alertas desta versão são calculados pela data de necessidade menos antecedência.
+4. Em Configurações, cadastrar fornecedores com dados da empresa, CNPJ, endereço, categoria, contatos oficiais e responsáveis comercial e financeiro, ambos com e-mail e WhatsApp obrigatórios. Fornecedores antigos permanecem disponíveis e podem ser completados pelo botão Completar cadastro.
+5. Criar requisições e selecionar os itens de cada fornecedor em Cotações por fornecedor. O mesmo item pode ser solicitado a vários fornecedores para comparação. Isso não contrata fornecedores nem duplica a compra. O PDF informa endereço de entrega, horário de recebimento e instruções de acesso da obra quando o cadastro completo está disponível.
+6. Baixar o PDF, enviar pelos canais configurados e registrar manualmente as propostas recebidas. Comparar total com frete, condições e prazo. Auditor aprova a proposta escolhida.
+7. Comprador emite pedido; almoxarife registra nota fiscal e quantidade recebida, inclusive entregas parciais.
+
+Valores monetários são armazenados em centavos. O comprometimento ocorre na aprovação da cotação e permanece após recebimento. Quantidades requisitadas não podem ultrapassar o planejamento, e a compra não pode ultrapassar o saldo aprovado do item. Esta versão não permite revisões de orçamento, cancelamento, devolução ou aditivos: esses fluxos precisam ser acrescentados para operação completa.
+
+## Configuração JRC e disparos
+
+Na tela Equipe e integrações, o administrador cadastra o e-mail remetente, o número WhatsApp de exibição e envia o logo real em PNG ou JPEG de até 5 MB. Recomenda-se 1.200 pixels de largura, mantendo a proporção original. O navegador prepara um JPEG RGB de até 1 MB, limita a maior dimensão a 1.200 pixels, mantém a proporção e aplica fundo branco para o PDF. Sem o logo, o PDF usa o nome JRC, mas os disparos ficam bloqueados para evitar enviar documentação sem a marca solicitada.
+
+O e-mail usa Resend. Configure `RESEND_API_KEY` no servidor e verifique o domínio do remetente. O número visual cadastrado não ativa a API WhatsApp. Configure `WA_TOKEN`, `WA_PHONE_ID`, `WA_API_VERSION` e `WA_TEMPLATE` na VPS; confirme que o ID da Meta pertence ao número cadastrado. O modelo aprovado precisa ter idioma pt_BR, cabeçalho Documento e corpo sem variáveis. O fornecedor precisa ter autorizado mensagens WhatsApp, e essa autorização deve estar cadastrada no contato.
+
+Os botões fazem envio real somente quando os canais e o logo estão configurados. Cada solicitação aceita um disparo por canal. O estado `aceito_provedor` indica aceitação da API, não entrega ou leitura. Erro ou timeout fica em `verificar`; não há repetição automática, pois um timeout pode ocorrer depois do envio. Um operador precisa verificar no provedor antes de qualquer novo disparo. Webhooks de entrega, fila com retentativas e reconciliação são etapas pendentes antes da operação em produção.
+
+Referências das integrações: [Resend: envio de anexos](https://resend.com/features/email-api), [Meta: exemplos oficiais WhatsApp Cloud API](https://github.com/fbsamples/whatsapp-api-examples). Não houve nenhum disparo externo durante o desenvolvimento.
+
+## Banco de dados e auditoria
+
+### Relatórios gerenciais e follow-up dos pedidos
+
+O menu Relatórios gerenciais contém Visão gerencial, Pedidos e follow-up, Orçamento por centro de custo, Desempenho dos fornecedores, Fluxo e pendências de compras e NF, contas a pagar e caixa da obra. Todos têm exportação Excel e impressão. Os filtros de obra e centro de custo estão disponíveis; nos relatórios de pedidos, também há fornecedor, situação e período de emissão (ou criação da requisição, quando ainda não há pedido). Em follow-up, filtre por responsável e atenção: atrasados, cobrança pendente, sem previsão, entrega em até sete dias ou prioridade crítica. A posição orçamentária considera o orçamento completo do centro, sem recorte por período ou fornecedor.
+
+Pedido emitido registra data/hora de emissão e número único. A previsão original é calculada pela data de emissão mais o prazo em dias corridos da cotação aprovada. A atualização recupera a data de emissão dos pedidos antigos pela trilha de auditoria quando disponível. Sem evidência de emissão, a previsão não é inventada: o pedido aparece como Sem previsão até que a equipe registre uma data informada pelo fornecedor.
+
+Administradores, compradores e engenheiros podem registrar follow-up dos pedidos emitidos ou recebidos parcialmente: canal do contato, registro, prioridade, responsável pelo acompanhamento, previsão informada pelo fornecedor e data da próxima cobrança. O histórico é preservado e auditado. Responsáveis devem ser compradores ou administradores ativos. Registrar follow-up não dispara e-mail ou WhatsApp; ele documenta o contato ou a próxima ação. Não há notificações agendadas fora da tela. Pedidos concluídos saem da lista de acompanhamento e das cobranças pendentes, mantendo o histórico no banco.
+
+Atraso operacional compara a data atual com a previsão atual, somente quando há quantidade pendente. A pontualidade do fornecedor compara a entrega final com o prazo original conhecido; uma renegociação no follow-up não melhora retroativamente esse indicador. Pedidos sem prazo original ou data final conhecida ficam fora do denominador de pontualidade. Os valores recebidos e pendentes são estimativas proporcionais às quantidades, incluindo frete; não são valores fiscais de notas nem pagamentos. O orçamento comprometido continua incluindo cotações aprovadas, pedidos e recebimentos, sem duplicar um mesmo pedido. O saldo disponível é orçamento aprovado menos comprometido. Relatórios usam dados locais, atualizados a cada quinze segundos enquanto a tela está aberta.
+
+### Importar e exportar cadastros Excel
+
+Em Configurações > Produtos e Fornecedores, os botões Exportar Excel e Baixar modelo geram arquivos `.xlsx`. A exportação inclui os dados cadastrais e, para fornecedores, os contatos comercial e financeiro. Não inclui senhas, credenciais ou dados de orçamento. O modelo apresenta as colunas e uma aba de instruções. CNPJ, CEP, códigos e WhatsApp são gravados como texto para preservar zeros à esquerda.
+
+Importar Excel aceita `.xlsx` de até 5 MB, 1.000 registros e 80 colunas por arquivo. Arquivos antigos `.xls` devem ser salvos como `.xlsx` no Excel antes de importar. Na prévia, escolha a aba de dados, a linha de cabeçalho (1 a 30), relacione as colunas aos campos do sistema e, se necessário, preencha valores padrão para campos sem coluna. A prévia apresenta até 30 registros e todos os erros encontrados. Ela não altera o banco. Alterar uma opção exige Conferir novamente antes de salvar.
+
+Por padrão, produtos já cadastrados pelo código e fornecedores já cadastrados pelo CNPJ são ignorados. Para atualizá-los, selecione Atualizar pelo código / CNPJ e confira a prévia. Os IDs e vínculos existentes são preservados. Campos não relacionados nem preenchidos com valor padrão mantêm os dados existentes nas atualizações; campos relacionados a células vazias são tratados como uma alteração explícita e precisam respeitar a validação. Produtos inativos não são reativados quando a situação não está mapeada. Cadastros novos precisam atender aos mesmos campos obrigatórios do formulário, incluindo ambos os responsáveis do fornecedor com e-mail e WhatsApp. Nenhum registro do lote é salvo se houver erros; a gravação e o histórico ficam em uma única transação. Identificadores repetidos dentro do arquivo geram erro. Fórmulas, macros e arquivos protegidos não são aceitos. Limites de expansão do arquivo são conferidos antes de carregar o Excel.
+
+A leitura e gravação de `.xlsx` usam [ExcelJS](https://github.com/exceljs/exceljs), versão fixada em 4.4.0. O Docker instala a biblioteca e suas dependências a partir do pnpm-lock.yaml incluído no pacote.
+
+Um banco relacional mantém obras, produtos, planejamento/orçamento, fornecedores, requisições, cotações, recebimentos e mensagens vinculados. A separação dos dois bancos originalmente descritos é lógica: orçamento aprovado e catálogo/planejamento são módulos vinculados por IDs, reduzindo divergências. Cada item planejado tem uma aprovação auditável. Configurações > Produtos mantém o catálogo mestre reutilizável entre obras; selecione um produto ao cadastrar um item planejado. O código é único, a unidade e descrição são padronizadas e a antecedência é sugerida para a obra. Alterações posteriores no catálogo não modificam itens já planejados ou orçamentos aprovados. Produtos inativos não podem ser selecionados em novos itens.
+
+Configurações reúne Obras, Fornecedores, Produtos, Tabelas de preços, Usuários e permissões, Recebimento de notas fiscais, Empresa e integrações. O cadastro de fornecedor separa os responsáveis comercial e financeiro. PDFs e disparos de cotação usam o contato comercial; dados financeiros não são enviados no PDF. O CNPJ é normalizado e conferido quanto ao formato e duplicidade; não há consulta à Receita Federal ou validação cadastral externa. As inscrições e o regime tributário são campos opcionais.
+
+Em Configurações > Obras, o cadastro aceita um logo do empreendimento/SPE em PNG ou JPEG de até 1 MB. O arquivo fica vinculado à obra, pode ser trocado ou removido e aparece na lista e na edição do cadastro. Esse logo é separado do logo corporativo JRC usado nos PDFs de cotação. Em Configurações > Tabelas de preços, administradores e compradores podem anexar planilhas homologadas `.xlsx` de até 5 MB, vinculadas ao fornecedor. Cada envio gera uma versão preservada no SQLite, com data, horário e usuário de atualização visíveis; a versão mais recente fica sinalizada e as versões anteriores podem ser baixadas. O upload mantém a planilha original para consulta, sem mapear automaticamente suas linhas para preços do catálogo de produtos.
+
+Em Usuários e permissões, administradores cadastram usuários, alteram nome/e-mail/perfil, redefinem senhas e ativam ou desativam acessos. Uma tabela exibe as ações de cada perfil. As permissões são definidas pelos cinco perfis; ainda não há edição de permissões individuais por operação. Desativação revoga o acesso nas próximas chamadas ao servidor e impede novo login. O último administrador ativo é protegido, e um administrador não pode desativar ou rebaixar o próprio perfil.
+
+CUB é cadastrado por UF e mês como referência global de custo por m²; não substitui a referência de preço de cada insumo. A atualização é manual e não há alimentação de índices em tempo real. A interface consulta o servidor a cada 15 segundos e mostra os dados do banco compartilhado da aplicação. Não há conexão com um ERP nesta versão.
+
+Usuários têm perfis administrador, engenheiro, comprador, auditor e almoxarife. Permissões são verificadas no servidor. Senhas usam scrypt; sessões expiram em oito horas e são encerradas ao reiniciar. Cookies têm HttpOnly/SameSite e Secure em produção. O histórico é gravado na mesma transação da alteração, não pode ser editado pela interface e exibe as últimas 500 ações; os demais registros permanecem no banco. Não se trata de trilha imutável contra alterações administrativas no arquivo do banco.
+
+## Notas fiscais, Arquivei/Qive e previsão de caixa
+
+Em Configurações > Recebimento de notas fiscais, o sistema pode consultar a API oficial Arquivei/Qive a cada 60 segundos. O administrador pode ajustar o intervalo de 60 segundos a 24 horas e iniciar uma consulta manual. Configure `QIVE_API_ID` e `QIVE_API_KEY` no `.env` da VPS; são credenciais da API, diferentes da senha ou do link de login do navegador. A conexão só fica ativa depois que a Qive liberar as credenciais e o acesso de API para a conta.
+
+Cada consulta envia à Qive apenas os CNPJs presentes no cadastro completo das obras e confere novamente o CNPJ destinatário retornado. Notas endereçadas a outros CNPJs não são armazenadas no sistema de compras. A primeira consulta busca até os últimos 30 dias disponíveis pela API. As notas elegíveis ficam numa fila; comprador, auditor ou administrador confere fornecedor e vincula a NF a um pedido da mesma obra/SPE. O sistema exige que o CNPJ emitente corresponda ao fornecedor do pedido e que o CNPJ destinatário corresponda ao CNPJ/SPE da obra. O XML devolvido pela Qive é anexado à NF vinculada quando tiver até 5 MB. O sistema consulta NF-e; outros tipos de documento fiscal ainda não estão incluídos nesta integração.
+
+Também é possível cadastrar uma NF individual e anexar seu XML ou PDF (até 5 MB), ou importar um lote `.xlsx` de até 1.000 notas pelo modelo da própria página. O modelo pede número do pedido, CNPJ emitente, CNPJ destinatário/SPE, número e chave da NF, datas de emissão/recebimento/vencimento e valor. Todos os vínculos e CNPJs são validados antes de importar; um lote com erros não é gravado. A exportação apresenta as NFs, situação de pagamento, pedido, obra, CNPJ destinatário e vencimento. O registro de uma NF cria a conta a pagar na data de vencimento informada; o pagamento pode ser baixado com a respectiva data.
+
+Em Relatórios gerenciais > NF, contas a pagar e caixa da obra, configure o saldo de caixa inicial e o prazo estimado de pagamento dos pedidos que ainda não têm NF. O painel compara o valor contratado, as NFs vinculadas, as NFs em aberto e o pedido ainda sem NF; projeta entradas e saídas cadastradas e calcula o saldo acumulado e o menor saldo futuro. Pedidos sem NF são estimados na previsão atual/original de entrega mais o prazo configurado. NF em aberto usa o vencimento real; uma NF paga não gera nova saída projetada. Os lançamentos de caixa previstos são inseridos por obra. Valores previstos precisam ser atualizados com o realizado para que o saldo inicial reflita a posição atual.
+
+Esta previsão gerencial não importa extrato bancário, fluxo de recebimentos do cliente ou parcelas de um mesmo título. Cada NF atualmente tem uma data e um valor de vencimento. A consulta Qive não recebe notificações por webhook: o sistema usa consultas periódicas da API, conforme a documentação da [API Qive](https://developers.qive.com.br/docs) e as [orientações de integração do fornecedor](https://ajuda.qive.com.br/pt-BR/articles/7045413-api-qive-como-integrar-e-automatizar-a-gestao-de-documentos-fiscais).
+
+## Preparação para VPS JRC
+
+Arquivos Dockerfile, compose.yml e .env.example estão incluídos. A instalação na VPS e o registro de domínio ainda não foram realizados.
+
+1. Confirmar sistema operacional Linux, acesso SSH, domínio escolhido, capacidade e política de backup da VPS JRC.
+2. Copiar esta pasta para a VPS, criar `.env` a partir do exemplo e substituir APP_ORIGIN e SETUP_TOKEN. Gerar o token com ferramenta segura; não reutilizar o exemplo.
+3. Configurar DNS para o IP da VPS e proxy reverso HTTPS (Nginx ou Caddy) encaminhando para 127.0.0.1:3000. Apenas o proxy deve ficar exposto à internet. A aplicação não termina TLS.
+4. Iniciar com `docker compose up -d --build`. O volume `compras_data` mantém banco e logo. Acessar pelo domínio HTTPS e cadastrar administrador usando o token de instalação. Remover SETUP_TOKEN após a configuração.
+5. Configurar provedores, verificar domínio remetente e modelo WhatsApp, testar com destinatários internos autorizados e só então liberar aos fornecedores reais.
+6. Fazer backup consistente por API de backup SQLite ou com aplicação parada; copiar somente o arquivo `.sqlite` enquanto o processo está rodando pode perder dados do WAL. Validar restauração periodicamente. Não remover o volume ao atualizar.
+
+## Escopo restante para produção
+
+Esta é uma primeira versão funcional, ainda não uma implantação final homologada. Faltam a homologação com compras/auditoria, revisão de orçamento, histórico de versões, regras de dupla aprovação (o administrador atualmente pode executar tudo), cancelamentos e devoluções, anexos de propostas, homologação das credenciais Qive de produção e outros tipos de documento fiscal além de NF-e, previsão versus realização por cronograma, importação de orçamentos/requisições (a importação Excel de produtos e fornecedores já está disponível), notificações agendadas fora da tela, integração ERP definida, recebimento automático de propostas, webhooks de entrega e tratamento operacional de reenvios. Antes da produção, incluir recuperação de acesso, política de retenção, monitoramento e revisão de segurança. SQLite atende a um piloto em uma instância; migração para PostgreSQL e trabalhadores de fila deve preceder escalabilidade com múltiplas instâncias.

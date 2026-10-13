@@ -1,0 +1,11 @@
+import {email,phone} from './suppliers.mjs';
+const fail=message=>{const e=new Error(message);e.status=400;throw e;};
+const text=(v,label,optional=false)=>{if(optional&&(v===undefined||v===''))return '';if(typeof v!=='string'||!v.trim()||v.length>300)fail(`${label}: preencha até 300 caracteres.`);return v.trim();};
+export const workRoles=[['engineer','Engenheiro responsável'],['architect','Arquiteto responsável'],['hydraulic','Engenheiro hidráulico'],['electrical','Engenheiro elétrico'],['accountant','Contador responsável'],['foreman','Mestre de obras'],['warehouse','Responsável pelo almoxarifado']];
+export function workProfile(b){
+ const cnpj=text(b.cnpj,'CNPJ da obra').replace(/[.\/\s-]/g,'').toUpperCase();if(!/^[A-Z0-9]{12}\d{2}$/.test(cnpj))fail('CNPJ: informe os 14 caracteres do cadastro.');
+ const address=prefix=>{const label=prefix==='site'?'Endereço da obra':'Endereço de entrega';const uf=text(b[prefix+'_uf'],label+' / UF').toUpperCase();if(!'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ').includes(uf))fail(label+': UF inválida.');const postal_code=text(b[prefix+'_postal_code'],label+' / CEP').replace(/[\s-]/g,'');if(!/^\d{8}$/.test(postal_code))fail(label+': CEP deve conter 8 dígitos.');return {postal_code,street:text(b[prefix+'_street'],label+' / Logradouro'),number:text(b[prefix+'_number'],label+' / Número'),complement:text(b[prefix+'_complement'],label+' / Complemento',true),district:text(b[prefix+'_district'],label+' / Bairro'),city:text(b[prefix+'_city'],label+' / Cidade'),uf};};
+ const contacts={};for(const [key,label]of workRoles){contacts[key]={name:text(b[key+'_name'],label),email:b[key+'_email']?email(b[key+'_email'],label+' / E-mail'):'',phone:b[key+'_phone']?phone(b[key+'_phone'],label+' / WhatsApp'):'',registration:text(b[key+'_registration'],label+' / Registro profissional',true)};}
+ return {legal_name:text(b.legal_name,'Razão social'),trade_name:text(b.trade_name,'Nome fantasia'),cnpj,site:address('site'),delivery:address('delivery'),contacts,receiving_schedule:text(b.receiving_schedule,'Horário de recebimento de produtos'),delivery_notes:text(b.delivery_notes,'Instruções de entrega',true)};
+}
+export function addressText(a){return a?`${a.street}, ${a.number}${a.complement?' / '+a.complement:''} - ${a.district} - ${a.city}/${a.uf} - CEP ${a.postal_code}`:'';}
